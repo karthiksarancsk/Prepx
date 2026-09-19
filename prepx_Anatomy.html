@@ -36393,7 +36393,7 @@
         let timeRemaining = 0;
         let timerInterval = null;
 
-        let quizState = { answers: {}, marked: {}, time: 0, currentQuestion: 0 };
+        let quizState = { answers: {}, marked: {}, timedOut: {}, currentQuestion: 0 };
         let userProgress = { completions: {}, bookmarks: {} };
 
         const screens = ['auth-screen', 'dashboard-screen', 'instructions-screen', 'quiz-screen', 'results-screen', 'review-screen'];
@@ -36506,27 +36506,38 @@
         document.getElementById('btn-inst-start').addEventListener('click', () => {
             resetQuizState();
             currentQuestionIndex = 0;
-            timeRemaining = currentQuizData.questions.length * 60;
+            
             renderQuizNavGrid();
             renderQuestion();
             startTimer();
             showScreen('quiz-screen');
         });
 
-        function resetQuizState() { quizState = { answers: {}, marked: {}, time: 0, currentQuestion: 0 }; }
+        function resetQuizState() { quizState = { answers: {}, marked: {}, timedOut: {}, currentQuestion: 0 }; }
 
         function saveQuizState() {
-            quizState.time = timeRemaining;
             quizState.currentQuestion = currentQuestionIndex;
             localStorage.setItem(`quiz_${currentQuizId}`, JSON.stringify(quizState));
         }
 
         function startTimer() {
             clearInterval(timerInterval);
+            if (quizState.answers[currentQuestionIndex] || quizState.timedOut[currentQuestionIndex]) {
+                document.getElementById('quiz-timer').textContent = "--:--";
+                return;
+            }
+            timeRemaining = 50;
             updateTimerUI();
             timerInterval = setInterval(() => {
                 timeRemaining--;
-                if (timeRemaining <= 0) { clearInterval(timerInterval); timeRemaining = 0; submitQuiz(); }
+                if (timeRemaining <= 0) {
+                    clearInterval(timerInterval);
+                    timeRemaining = 0;
+                    quizState.timedOut[currentQuestionIndex] = true;
+                    saveQuizState();
+                    renderQuestion();
+                    renderQuizNavGrid();
+                }
                 updateTimerUI();
             }, 1000);
         }
@@ -36554,6 +36565,7 @@
         }
 
         function renderQuestion() {
+
             const q = currentQuizData.questions[currentQuestionIndex];
             document.getElementById('quiz-q-num').textContent = `Question ${currentQuestionIndex + 1} of ${currentQuizData.questions.length}`;
             document.getElementById('quiz-q-text').innerHTML = q.text;
@@ -36569,16 +36581,37 @@
             
             const optDiv = document.getElementById('quiz-options');
             optDiv.innerHTML = '';
+            
+            const isAnswered = quizState.answers[currentQuestionIndex];
+            const isTimedOut = quizState.timedOut[currentQuestionIndex];
+            const showFeedback = isAnswered || isTimedOut;
+            
             q.options.forEach(opt => {
-                const btn = document.createElement('button');
-                btn.className = 'option-btn flex items-start';
-                if (quizState.answers[currentQuestionIndex] === opt.label) btn.classList.add('option-selected');
-                btn.innerHTML = `<span class="font-bold mr-3 w-6 h-6 flex-shrink-0 bg-gray-200 dark:bg-gray-700 text-center rounded-full text-sm leading-6 flex items-center justify-center">${opt.label}</span><span>${opt.text}</span>`;
-                btn.onclick = () => {
-                    quizState.answers[currentQuestionIndex] = (quizState.answers[currentQuestionIndex] === opt.label) ? undefined : opt.label;
-                    renderQuestion(); renderQuizNavGrid(); saveQuizState();
-                };
-                optDiv.appendChild(btn);
+                const div = document.createElement('div');
+                div.className = 'option-btn flex items-start';
+                
+                if (showFeedback) {
+                    div.classList.add('pointer-events-none');
+                    if (opt.correct) {
+                        div.classList.add('option-correct');
+                        div.innerHTML = `<span class="font-bold mr-3 w-6 h-6 flex-shrink-0 bg-green-500 text-white text-center rounded-full text-sm leading-6 flex items-center justify-center">${opt.label}</span><span>${opt.text} <span class="ml-2 text-green-600 dark:text-green-400 text-xs font-bold">✓ Correct</span></span>`;
+                    } else if (isAnswered === opt.label) {
+                        div.classList.add('option-incorrect');
+                        div.innerHTML = `<span class="font-bold mr-3 w-6 h-6 flex-shrink-0 bg-red-500 text-white text-center rounded-full text-sm leading-6 flex items-center justify-center">${opt.label}</span><span>${opt.text} <span class="ml-2 text-red-600 dark:text-red-400 text-xs font-bold">✗ Incorrect</span></span>`;
+                    } else {
+                        div.innerHTML = `<span class="font-bold mr-3 w-6 h-6 flex-shrink-0 bg-gray-200 dark:bg-gray-700 text-center rounded-full text-sm leading-6 flex items-center justify-center">${opt.label}</span><span>${opt.text}</span>`;
+                    }
+                } else {
+                    div.classList.add('cursor-pointer');
+                    div.innerHTML = `<span class="font-bold mr-3 w-6 h-6 flex-shrink-0 bg-gray-200 dark:bg-gray-700 text-center rounded-full text-sm leading-6 flex items-center justify-center">${opt.label}</span><span>${opt.text}</span>`;
+                    div.onclick = () => {
+                        quizState.answers[currentQuestionIndex] = opt.label;
+                        saveQuizState();
+                        renderQuestion(); 
+                        renderQuizNavGrid(); 
+                    };
+                }
+                optDiv.appendChild(div);
             });
             
             document.getElementById('btn-quiz-prev').disabled = currentQuestionIndex === 0;
@@ -36587,6 +36620,29 @@
             const markBtn = document.getElementById('btn-quiz-mark');
             if (quizState.marked[currentQuestionIndex]) markBtn.classList.add('bg-yellow-50', 'dark:bg-yellow-900/30');
             else markBtn.classList.remove('bg-yellow-50', 'dark:bg-yellow-900/30');
+            
+            const existingExp = document.getElementById('quiz-explanation-container');
+            if (existingExp) existingExp.remove();
+            
+            if (showFeedback) {
+                const expDiv = document.createElement('div');
+                expDiv.id = 'quiz-explanation-container';
+                expDiv.className = 'mt-8 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl p-6';
+                expDiv.innerHTML = `<h4 class="font-bold text-lg mb-4 flex items-center"><svg class="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>Explanation</h4><div class="prose dark:prose-invert max-w-none text-sm leading-relaxed">${q.explanation || 'No explanation provided.'}</div>`;
+                
+                if (q.explanation_images && q.explanation_images.length > 0) {
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'mt-4';
+                    q.explanation_images.forEach(imgUrl => {
+                        imgContainer.innerHTML += `<img src="${imgUrl}" class="max-w-full h-auto rounded-lg mb-2">`;
+                    });
+                    expDiv.querySelector('.prose').appendChild(imgContainer);
+                }
+                document.querySelector('#quiz-options').parentElement.appendChild(expDiv);
+            }
+            
+            startTimer();
+
         }
 
         document.getElementById('btn-quiz-prev').addEventListener('click', () => { if (currentQuestionIndex > 0) { currentQuestionIndex--; renderQuestion(); renderQuizNavGrid(); } });
@@ -36667,6 +36723,39 @@
         document.getElementById('btn-rev-prev').addEventListener('click', () => { if (currentQuestionIndex > 0) { currentQuestionIndex--; renderReviewNavGrid(); renderReviewQuestion(); } });
         document.getElementById('btn-rev-next').addEventListener('click', () => { if (currentQuestionIndex < currentQuizData.questions.length - 1) { currentQuestionIndex++; renderReviewNavGrid(); renderReviewQuestion(); } });
         document.getElementById('btn-rev-exit').addEventListener('click', () => showScreen('results-screen'));
+    
+        let touchstartX = 0;
+        let touchendX = 0;
+        
+        function handleSwipe() {
+            if (!document.getElementById('quiz-screen').classList.contains('active')) return;
+            const threshold = 50; // min distance to be considered a swipe
+            if (touchendX < touchstartX - threshold) {
+                // Swipe Left -> Next
+                if (currentQuestionIndex < currentQuizData.questions.length - 1) { 
+                    currentQuestionIndex++; renderQuestion(); renderQuizNavGrid(); 
+                } else { 
+                    submitQuiz(); 
+                }
+            }
+            if (touchendX > touchstartX + threshold) {
+                // Swipe Right -> Prev
+                if (currentQuestionIndex > 0) { 
+                    currentQuestionIndex--; renderQuestion(); renderQuizNavGrid(); 
+                }
+            }
+        }
+
+        const quizContainer = document.getElementById('quiz-screen');
+        quizContainer.addEventListener('touchstart', e => {
+            touchstartX = e.changedTouches[0].screenX;
+        });
+
+        quizContainer.addEventListener('touchend', e => {
+            touchendX = e.changedTouches[0].screenX;
+            handleSwipe();
+        });
+
     </script>
 </body>
 </html>
