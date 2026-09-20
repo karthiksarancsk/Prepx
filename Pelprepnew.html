@@ -85,8 +85,8 @@
         </div>
         <div class="flex-grow flex flex-col md:flex-row overflow-hidden">
             <div class="w-full md:w-1/4 lg:w-1/5 border-b md:border-b-0 md:border-r dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
-                <div class="p-4"><h3 class="font-bold mb-2">Saved Questions</h3></div>
-                <div id="bm-nav-grid" class="grid grid-cols-5 gap-2 px-4 pb-4"></div>
+                <div class="p-4 border-b dark:border-gray-800"><h3 class="font-bold">Saved Questions</h3></div>
+                <div id="bm-nav-grid" class="p-4 space-y-4"></div>
             </div>
             <div class="w-full md:w-3/4 lg:w-4/5 overflow-y-auto p-4 md:p-8" id="bm-content">
                 <div id="bm-q-container" class="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-6">
@@ -36416,11 +36416,12 @@
 
         let allBookmarks = [];
         let currentBookmarkIndex = 0;
-        let bookmarkShowAnswers = true;
+        let bookmarkShowAnswers = false;
 
         document.getElementById('btn-bookmarks').addEventListener('click', () => {
             loadAllBookmarks();
             currentBookmarkIndex = 0;
+            document.getElementById('btn-bm-toggle').textContent = bookmarkShowAnswers ? 'Hide Answers' : 'Show Answers';
             renderBookmarksNavGrid();
             renderBookmarkQuestion();
             showScreen('bookmarks-screen');
@@ -36441,11 +36442,17 @@
                 if (savedState) {
                     const state = JSON.parse(savedState);
                     if (state.marked) {
+                        let titleParts = quiz.title.split('-');
+                        let displaySubject = titleParts.length > 1 ? titleParts[0].replace(/_/g, ' ') : 'General';
+                        let displaySubtopic = titleParts.length > 1 ? titleParts[1].replace(/_/g, ' ') : quiz.title.replace(/_/g, ' ');
+
                         for (const qIdx in state.marked) {
                             if (state.marked[qIdx]) {
                                 allBookmarks.push({
                                     quizId: quiz.id,
                                     quizTitle: quiz.title,
+                                    subject: displaySubject,
+                                    subtopic: displaySubtopic,
                                     qIdx: parseInt(qIdx),
                                     questionData: quiz.questions[qIdx],
                                     userAns: state.answers && state.answers[qIdx]
@@ -36460,26 +36467,61 @@
         function renderBookmarksNavGrid() {
             const grid = document.getElementById('bm-nav-grid');
             grid.innerHTML = '';
-            allBookmarks.forEach((bm, idx) => {
-                const btn = document.createElement('button');
-                btn.className = `w-10 h-10 rounded-full font-bold flex items-center justify-center border transition ${idx === currentBookmarkIndex ? 'border-blue-500 bg-blue-100 text-blue-700 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800'}`;
-                
-                // Color code nav grid slightly based on if they got it right or wrong when bookmarked (if answered)
-                let bgColor = '';
-                if (bm.userAns) {
-                    const correctOpt = bm.questionData.options.find(o => o.correct);
-                    if (correctOpt && bm.userAns === correctOpt.label) {
-                        bgColor = 'bg-green-100 dark:bg-green-900/30 border-green-300';
-                    } else {
-                        bgColor = 'bg-red-100 dark:bg-red-900/30 border-red-300';
-                    }
-                    if (idx !== currentBookmarkIndex) btn.className = `w-10 h-10 rounded-full font-bold flex items-center justify-center border transition ${bgColor}`;
-                }
 
-                btn.textContent = idx + 1;
-                btn.onclick = () => { currentBookmarkIndex = idx; renderBookmarksNavGrid(); renderBookmarkQuestion(); };
-                grid.appendChild(btn);
+            if (allBookmarks.length === 0) {
+                grid.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">No bookmarked questions.</p>';
+                return;
+            }
+
+            // Group bookmarks by subtopic
+            const groups = {};
+            allBookmarks.forEach((bm, idx) => {
+                const groupName = `${bm.subject} - ${bm.subtopic}`;
+                if (!groups[groupName]) {
+                    groups[groupName] = [];
+                }
+                groups[groupName].push({ bookmark: bm, globalIdx: idx });
             });
+
+            for (const groupName in groups) {
+                const groupContainer = document.createElement('div');
+                groupContainer.className = 'mb-4';
+
+                const groupHeader = document.createElement('div');
+                groupHeader.className = 'text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-2 leading-tight';
+                groupHeader.textContent = groupName;
+                groupContainer.appendChild(groupHeader);
+
+                const btnGrid = document.createElement('div');
+                btnGrid.className = 'grid grid-cols-5 gap-2';
+
+                groups[groupName].forEach(item => {
+                    const bm = item.bookmark;
+                    const idx = item.globalIdx;
+
+                    const btn = document.createElement('button');
+                    btn.className = `w-10 h-10 rounded-full font-bold flex items-center justify-center border transition ${idx === currentBookmarkIndex ? 'border-blue-500 bg-blue-100 text-blue-700 dark:bg-blue-900/30' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800'}`;
+
+                    if (bm.userAns) {
+                        const correctOpt = bm.questionData.options.find(o => o.correct);
+                        let bgColor = '';
+                        if (correctOpt && bm.userAns === correctOpt.label) {
+                            bgColor = 'bg-green-100 dark:bg-green-900/30 border-green-300';
+                        } else {
+                            bgColor = 'bg-red-100 dark:bg-red-900/30 border-red-300';
+                        }
+                        if (idx !== currentBookmarkIndex) btn.className = `w-10 h-10 rounded-full font-bold flex items-center justify-center border transition ${bgColor}`;
+                    }
+
+                    btn.textContent = bm.qIdx + 1;
+                    btn.title = `Q${bm.qIdx + 1}`;
+                    btn.onclick = () => { currentBookmarkIndex = idx; renderBookmarksNavGrid(); renderBookmarkQuestion(); };
+                    btnGrid.appendChild(btn);
+                });
+
+                groupContainer.appendChild(btnGrid);
+                grid.appendChild(groupContainer);
+            }
         }
 
         function renderBookmarkQuestion() {
